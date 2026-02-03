@@ -1,14 +1,31 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 
-// For Render: bruk /var/data for persistent storage
+// For Render: bruk /var/data for persistent storage (krever disk)
+// Fallback til ./data hvis /var/data ikke finnes
 // For lokal utvikling: bruk prosjektmappen
-const dbDir = process.env.NODE_ENV === 'production'
-  ? '/var/data'
-  : path.resolve(process.cwd());
+let dbDir: string;
+
+if (process.env.NODE_ENV === 'production') {
+  // Sjekk om /var/data eksisterer (Render persistent disk)
+  if (fs.existsSync('/var/data')) {
+    dbDir = '/var/data';
+  } else {
+    // Fallback: bruk lokal data-mappe i prosjektet
+    dbDir = path.resolve(process.cwd(), 'data');
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+  }
+} else {
+  dbDir = path.resolve(process.cwd());
+}
+
 const dbPath = path.join(dbDir, 'database.sqlite');
 
 console.log(`Database path: ${dbPath}`);
+console.log(`Directory exists: ${fs.existsSync(dbDir)}`);
 
 const db = new Database(dbPath);
 
