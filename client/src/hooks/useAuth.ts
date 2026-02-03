@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../services/api';
-import { User } from '../types';
+import api, { setToken, getToken } from '../services/api';
+
+interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -8,17 +14,17 @@ export function useAuth() {
   const [error, setError] = useState<string | null>(null);
 
   const checkAuth = useCallback(async () => {
-    const token = api.getToken();
+    const token = getToken();
     if (!token) {
       setLoading(false);
       return;
     }
 
     try {
-      const { user } = await api.getMe();
-      setUser(user);
+      const response = await api.get('/auth/me');
+      setUser(response.data.user);
     } catch (err) {
-      api.setToken(null);
+      setToken(null);
       setUser(null);
     } finally {
       setLoading(false);
@@ -32,44 +38,32 @@ export function useAuth() {
   const login = async (email: string, password: string) => {
     setError(null);
     try {
-      const { token, user } = await api.login(email, password);
-      api.setToken(token);
-      setUser(user);
+      const response = await api.post('/auth/login', { email, password });
+      setToken(response.data.token);
+      setUser(response.data.user);
       return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Innlogging feilet');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Innlogging feilet');
       return false;
     }
   };
 
-  const register = async (email: string, password: string, name: string, company?: string) => {
+  const register = async (email: string, password: string, name: string) => {
     setError(null);
     try {
-      const { token, user } = await api.register(email, password, name, company);
-      api.setToken(token);
-      setUser(user);
+      const response = await api.post('/auth/register', { email, password, name });
+      setToken(response.data.token);
+      setUser(response.data.user);
       return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registrering feilet');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Registrering feilet');
       return false;
     }
   };
 
   const logout = () => {
-    api.setToken(null);
+    setToken(null);
     setUser(null);
-  };
-
-  const updateProfile = async (data: { name?: string; company?: string; currentPassword?: string; newPassword?: string }) => {
-    setError(null);
-    try {
-      const { user: updatedUser } = await api.updateMe(data);
-      setUser(updatedUser);
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Oppdatering feilet');
-      return false;
-    }
   };
 
   return {
@@ -79,7 +73,6 @@ export function useAuth() {
     login,
     register,
     logout,
-    updateProfile,
     isAuthenticated: !!user
   };
 }

@@ -5,9 +5,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import CostPricesPage from './pages/CostPricesPage';
-import QuotesPage from './pages/QuotesPage';
-import QuoteEditorPage from './pages/QuoteEditorPage';
-import SettingsPage from './pages/SettingsPage';
+import CalculationPage from './pages/CalculationPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -15,7 +13,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
@@ -32,8 +30,8 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-steel-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
@@ -54,10 +52,8 @@ function App() {
       }>
         <Route index element={<DashboardPage />} />
         <Route path="kostpriser" element={<CostPricesPage />} />
-        <Route path="tilbud" element={<QuotesPage />} />
-        <Route path="tilbud/:id" element={<QuoteEditorPage />} />
-        <Route path="tilbud/ny" element={<QuoteEditorPage />} />
-        <Route path="innstillinger" element={<SettingsPage />} />
+        <Route path="kalkyle" element={<CalculationPage />} />
+        <Route path="kalkyle/:id" element={<CalculationPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

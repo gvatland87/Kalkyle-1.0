@@ -8,11 +8,9 @@ import fs from 'fs';
 let dbDir: string;
 
 if (process.env.NODE_ENV === 'production') {
-  // Sjekk om /var/data eksisterer (Render persistent disk)
   if (fs.existsSync('/var/data')) {
     dbDir = '/var/data';
   } else {
-    // Fallback: bruk lokal data-mappe i prosjektet
     dbDir = path.resolve(process.cwd(), 'data');
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
@@ -32,30 +30,28 @@ const db = new Database(dbPath);
 // Aktiver foreign keys
 db.pragma('foreign_keys = ON');
 
-// Opprett tabeller
+// Opprett tabeller - FORENKLET VERSJON
 db.exec(`
-  -- Brukere
+  -- Brukere (for innlogging)
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     name TEXT NOT NULL,
-    company TEXT,
     role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
     created_at TEXT DEFAULT (datetime('now'))
   );
 
-  -- Kostnadskategorier
+  -- Globale kostnadskategorier (delt for alle brukere)
   CREATE TABLE IF NOT EXISTS cost_categories (
     id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('labor', 'material', 'consumable', 'transport', 'ndt')),
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
   );
 
-  -- Kostnadsposter
+  -- Globale kostnadsposter (delt for alle brukere)
   CREATE TABLE IF NOT EXISTS cost_items (
     id TEXT PRIMARY KEY,
     category_id TEXT NOT NULL,
@@ -63,76 +59,57 @@ db.exec(`
     description TEXT,
     unit TEXT NOT NULL,
     unit_price REAL NOT NULL,
-    ndt_method TEXT CHECK (ndt_method IN ('RT', 'UT', 'MT', 'PT', 'VT', NULL)),
-    ndt_level TEXT CHECK (ndt_level IN ('Level I', 'Level II', 'Level III', NULL)),
+    sort_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (category_id) REFERENCES cost_categories(id) ON DELETE CASCADE
   );
 
-  -- Tilbud
-  CREATE TABLE IF NOT EXISTS quotes (
+  -- Kalkyler (regneark-stil)
+  CREATE TABLE IF NOT EXISTS calculations (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    quote_number TEXT NOT NULL,
-    customer_name TEXT NOT NULL,
-    customer_email TEXT,
-    customer_address TEXT,
-    project_name TEXT NOT NULL,
-    project_description TEXT,
-    reference TEXT,
-    valid_until TEXT,
-    status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'accepted', 'rejected')),
-    markup_percent REAL DEFAULT 0,
-    notes TEXT,
-    terms TEXT,
+    name TEXT NOT NULL,
+    description TEXT,
+    target_margin_percent REAL DEFAULT 15,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
-  -- Tilbudslinjer
-  CREATE TABLE IF NOT EXISTS quote_lines (
+  -- Kalkulasjonslinjer
+  CREATE TABLE IF NOT EXISTS calculation_lines (
     id TEXT PRIMARY KEY,
-    quote_id TEXT NOT NULL,
+    calculation_id TEXT NOT NULL,
     cost_item_id TEXT,
-    category_type TEXT NOT NULL,
     description TEXT NOT NULL,
-    quantity REAL NOT NULL,
+    quantity REAL NOT NULL DEFAULT 1,
     unit TEXT NOT NULL,
-    unit_price REAL NOT NULL,
-    line_markup REAL DEFAULT 0,
-    line_total REAL NOT NULL,
+    unit_cost REAL NOT NULL,
     sort_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (quote_id) REFERENCES quotes(id) ON DELETE CASCADE,
+    FOREIGN KEY (calculation_id) REFERENCES calculations(id) ON DELETE CASCADE,
     FOREIGN KEY (cost_item_id) REFERENCES cost_items(id) ON DELETE SET NULL
   );
 
-  -- Bedriftsinnstillinger
-  CREATE TABLE IF NOT EXISTS company_settings (
-    id TEXT PRIMARY KEY,
-    user_id TEXT UNIQUE NOT NULL,
-    company_name TEXT,
-    org_number TEXT,
-    address TEXT,
-    postal_code TEXT,
-    city TEXT,
-    phone TEXT,
-    email TEXT,
-    website TEXT,
-    logo_url TEXT,
-    default_terms TEXT,
-    default_validity_days INTEGER DEFAULT 30,
-    vat_percent REAL DEFAULT 25,
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-
-  -- Indekser for ytelse
-  CREATE INDEX IF NOT EXISTS idx_cost_categories_user ON cost_categories(user_id);
+  -- Indekser
   CREATE INDEX IF NOT EXISTS idx_cost_items_category ON cost_items(category_id);
-  CREATE INDEX IF NOT EXISTS idx_quotes_user ON quotes(user_id);
-  CREATE INDEX IF NOT EXISTS idx_quote_lines_quote ON quote_lines(quote_id);
+  CREATE INDEX IF NOT EXISTS idx_calculations_user ON calculations(user_id);
+  CREATE INDEX IF NOT EXISTS idx_calculation_lines_calc ON calculation_lines(calculation_id);
 `);
+
+// Seed standard kategorier hvis de ikke finnes
+const categoryCount = db.prepare('SELECT COUNT(*) as count FROM cost_categories').get() as { count: number };
+if (categoryCount.count === 0) {
+  const insertCategory = db.prepare('INSERT INTO cost_categories (id, name, type, sort_order) VALUES (?, ?, ?, ?)');
+
+  insertCategory.run('cat-labor', 'Arbeid', 'labor', 1);
+  insertCategory.run('cat-material', 'Materialer', 'material', 2);
+  insertCategory.run('cat-consumable', 'Forbruksmateriell', 'consumable', 3);
+  insertCategory.run('cat-transport', 'Transport', 'transport', 4);
+  insertCategory.run('cat-ndt', 'NDT', 'ndt', 5);
+
+  console.log('Standard kategorier opprettet');
+}
 
 export default db;

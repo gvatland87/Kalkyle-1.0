@@ -7,7 +7,6 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
-  const [company, setCompany] = useState('');
   const [loading, setLoading] = useState(false);
   const [validationError, setValidationError] = useState('');
   const { register, error } = useAuth();
@@ -29,7 +28,7 @@ export default function RegisterPage() {
 
     setLoading(true);
 
-    const success = await register(email, password, name, company || undefined);
+    const success = await register(email, password, name);
     if (success) {
       navigate('/');
     }
@@ -38,17 +37,17 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-steel-100 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h1 className="text-center text-4xl font-bold text-steel-800">Kalkyle 1.0</h1>
-          <p className="mt-2 text-center text-steel-600">Kalkulasjonssystem for stålindustri</p>
-          <h2 className="mt-6 text-center text-2xl font-semibold text-steel-900">
+          <h1 className="text-center text-4xl font-bold text-gray-800">Kalkyle 1.0</h1>
+          <p className="mt-2 text-center text-gray-600">Kalkulasjonssystem</p>
+          <h2 className="mt-6 text-center text-2xl font-semibold text-gray-900">
             Opprett konto
           </h2>
         </div>
 
-        <form className="mt-8 space-y-6 card" onSubmit={handleSubmit}>
+        <form className="mt-8 space-y-6 bg-white p-8 rounded-lg shadow" onSubmit={handleSubmit}>
           {(error || validationError) && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
               {validationError || error}
@@ -57,12 +56,14 @@ export default function RegisterPage() {
 
           <div className="space-y-4">
             <div>
-              <label htmlFor="name" className="label">Navn</label>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                Navn
+              </label>
               <input
                 id="name"
                 type="text"
                 required
-                className="input"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Ditt navn"
@@ -70,12 +71,14 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="email" className="label">E-postadresse</label>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                E-postadresse
+              </label>
               <input
                 id="email"
                 type="email"
                 required
-                className="input"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="din@epost.no"
@@ -83,24 +86,14 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="company" className="label">Bedrift (valgfritt)</label>
-              <input
-                id="company"
-                type="text"
-                className="input"
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                placeholder="Bedriftsnavn"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="label">Passord</label>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                Passord
+              </label>
               <input
                 id="password"
                 type="password"
                 required
-                className="input"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Minst 6 tegn"
@@ -108,12 +101,14 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="label">Bekreft passord</label>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                Bekreft passord
+              </label>
               <input
                 id="confirmPassword"
                 type="password"
                 required
-                className="input"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Gjenta passord"
@@ -124,14 +119,14 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={loading}
-            className="btn btn-primary w-full"
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
             {loading ? 'Registrerer...' : 'Registrer deg'}
           </button>
 
-          <p className="text-center text-sm text-steel-600">
+          <p className="text-center text-sm text-gray-600">
             Har du allerede konto?{' '}
-            <Link to="/login" className="text-primary-600 hover:text-primary-700 font-medium">
+            <Link to="/login" className="text-blue-600 hover:text-blue-700 font-medium">
               Logg inn
             </Link>
           </p>

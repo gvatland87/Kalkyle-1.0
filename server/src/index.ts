@@ -5,9 +5,7 @@ import './database.js'; // Initialiser database
 import authRoutes from './routes/auth.js';
 import categoriesRoutes from './routes/categories.js';
 import costItemsRoutes from './routes/costItems.js';
-import quotesRoutes from './routes/quotes.js';
-import settingsRoutes from './routes/settings.js';
-import pdfRoutes from './routes/pdf.js';
+import calculationsRoutes from './routes/calculations.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -21,12 +19,10 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Tillat requests uten origin (f.eks. mobile apps, Postman)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    // Tillat alle *.vercel.app domener
     if (origin.endsWith('.vercel.app')) {
       return callback(null, true);
     }
@@ -41,9 +37,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/cost-items', costItemsRoutes);
-app.use('/api/quotes', quotesRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/pdf', pdfRoutes);
+app.use('/api/calculations', calculationsRoutes);
 
 // Helse-sjekk
 app.get('/api/health', (req, res) => {
@@ -54,7 +48,7 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'Kalkyle 1.0 API',
-    version: '1.0.0',
+    version: '2.0.0',
     status: 'running'
   });
 });
