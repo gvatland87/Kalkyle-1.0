@@ -1,0 +1,21 @@
+# Render Blueprint for Kalkyle 1.0 Backend
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: kalkyle-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false  # Sett denne manuelt etter deploy
+    disk:
+      name: kalkyle-data
+      mountPath: /var/data
+      sizeGB: 1
