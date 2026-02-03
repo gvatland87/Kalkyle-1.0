@@ -9,8 +9,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'company' | 'profile'>('company');
 
-  // Company settings
-  const [settings, setSettings] = useState<CompanySettings | null>(null);
+  // Company settings (settings brukes indirekte via setSettings)
+  const [, setSettings] = useState<CompanySettings | null>(null);
   const [companyForm, setCompanyForm] = useState({
     companyName: '',
     orgNumber: '',
