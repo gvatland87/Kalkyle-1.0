@@ -1,26 +1,80 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import api from '../services/api';
+
+interface CostItem {
+  id: string;
+  name: string;
+  unit: string;
+  unit_price: number;
+  category_name: string;
+  category_type: string;
+}
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // Kostpriser fra database
+  const [costItems, setCostItems] = useState<CostItem[]>([]);
+  const [selectedCostItem, setSelectedCostItem] = useState<string>('');
+
   // DG Kalkulator state
-  const [kiloPrice, setKiloPrice] = useState<number>(0);
-  const [weight, setWeight] = useState<number>(1);
+  const [unitPrice, setUnitPrice] = useState<number>(0);
+  const [quantity, setQuantity] = useState<number>(1);
+  const [unit, setUnit] = useState<string>('stk');
   const [targetDG, setTargetDG] = useState<number>(15);
+
+  // Last inn kostpriser ved oppstart
+  useEffect(() => {
+    const loadCostItems = async () => {
+      try {
+        const response = await api.get('/cost-items');
+        setCostItems(response.data.items || []);
+      } catch (error) {
+        console.error('Feil ved lasting av kostpriser:', error);
+      }
+    };
+    loadCostItems();
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  // Beregn salgspris basert på kilopris, vekt og DG
-  const totalCost = kiloPrice * weight;
+  // Håndter valg av kostpris
+  const handleCostItemSelect = (itemId: string) => {
+    setSelectedCostItem(itemId);
+    const item = costItems.find(ci => ci.id === itemId);
+    if (item) {
+      setUnitPrice(item.unit_price);
+      setUnit(item.unit);
+    }
+  };
+
+  // Beregn salgspris basert på enhetspris, antall og DG
+  const totalCost = unitPrice * quantity;
   const salesPrice = targetDG >= 100 ? 0 : totalCost / (1 - targetDG / 100);
   const margin = salesPrice - totalCost;
+
+  // Grupper kostpriser etter kategori
+  const groupedCostItems = costItems.reduce((acc, item) => {
+    const key = item.category_type;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {} as Record<string, CostItem[]>);
+
+  const categoryLabels: Record<string, string> = {
+    labor: 'Arbeid',
+    material: 'Materialer',
+    consumable: 'Forbruksmateriell',
+    transport: 'Transport',
+    ndt: 'NDT'
+  };
 
   const navItems = [
     { to: '/', label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -32,33 +86,57 @@ export default function Layout() {
     <div className="min-h-screen bg-gray-50">
       {/* Top navbar - DG Kalkulator */}
       <div className="lg:ml-64 bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-gray-700">Hurtigkalkulator:</span>
 
+          {/* Dropdown for kostpriser */}
+          <div className="flex items-center gap-1">
+            <select
+              value={selectedCostItem}
+              onChange={(e) => handleCostItemSelect(e.target.value)}
+              className="w-44 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">-- Velg kostpris --</option>
+              {Object.entries(groupedCostItems).map(([type, items]) => (
+                <optgroup key={type} label={categoryLabels[type] || type}>
+                  {items.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} ({item.unit_price} kr/{item.unit})
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Kilopris</label>
+            <label className="text-xs text-gray-500">Enhetspris</label>
             <input
               type="number"
-              value={kiloPrice || ''}
-              onChange={(e) => setKiloPrice(Number(e.target.value))}
+              value={unitPrice || ''}
+              onChange={(e) => {
+                setUnitPrice(Number(e.target.value));
+                setSelectedCostItem(''); // Nullstill valg ved manuell endring
+              }}
               className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="kr/kg"
+              placeholder="kr"
               min="0"
               step="0.01"
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Vekt (kg)</label>
+            <label className="text-xs text-gray-500">Antall</label>
             <input
               type="number"
-              value={weight || ''}
-              onChange={(e) => setWeight(Number(e.target.value))}
+              value={quantity || ''}
+              onChange={(e) => setQuantity(Number(e.target.value))}
               className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="kg"
+              placeholder="stk"
               min="0"
               step="0.1"
             />
+            <span className="text-xs text-gray-500">{unit}</span>
           </div>
 
           <div className="flex items-center gap-2">
