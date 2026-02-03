@@ -1,115 +1,85 @@
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import mongoose from 'mongoose';
 
-// For Render: bruk /var/data for persistent storage (krever disk)
-// Fallback til ./data hvis /var/data ikke finnes
-// For lokal utvikling: bruk prosjektmappen
-let dbDir: string;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/kalkyle';
 
-if (process.env.NODE_ENV === 'production') {
-  if (fs.existsSync('/var/data')) {
-    dbDir = '/var/data';
-  } else {
-    dbDir = path.resolve(process.cwd(), 'data');
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
-    }
-  }
-} else {
-  dbDir = path.resolve(process.cwd());
-}
+// Koble til MongoDB
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('Koblet til MongoDB'))
+  .catch((err) => console.error('MongoDB tilkoblingsfeil:', err));
 
-const dbPath = path.join(dbDir, 'database.sqlite');
+// === SCHEMAS ===
 
-console.log(`Database path: ${dbPath}`);
-console.log(`Directory exists: ${fs.existsSync(dbDir)}`);
+// Bruker
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true },
+  passwordHash: { type: String, required: true },
+  name: { type: String, required: true },
+  role: { type: String, enum: ['admin', 'user'], default: 'user' },
+  createdAt: { type: Date, default: Date.now }
+});
 
-const db = new Database(dbPath);
+// Kostnadskategori (global)
+const costCategorySchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  type: { type: String, enum: ['labor', 'material', 'consumable', 'transport', 'ndt'], required: true },
+  sortOrder: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
 
-// Aktiver foreign keys
-db.pragma('foreign_keys = ON');
+// Kostnadspost (global)
+const costItemSchema = new mongoose.Schema({
+  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCategory', required: true },
+  name: { type: String, required: true },
+  description: { type: String },
+  unit: { type: String, required: true },
+  unitPrice: { type: Number, required: true },
+  sortOrder: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
 
-// Opprett tabeller - FORENKLET VERSJON
-db.exec(`
-  -- Brukere (for innlogging)
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    name TEXT NOT NULL,
-    role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
-    created_at TEXT DEFAULT (datetime('now'))
-  );
+// Kalkyle
+const calculationSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  name: { type: String, required: true },
+  description: { type: String },
+  targetMarginPercent: { type: Number, default: 15 },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
 
-  -- Globale kostnadskategorier (delt for alle brukere)
-  CREATE TABLE IF NOT EXISTS cost_categories (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL CHECK (type IN ('labor', 'material', 'consumable', 'transport', 'ndt')),
-    sort_order INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
+// Kalkyle-linje
+const calculationLineSchema = new mongoose.Schema({
+  calculationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Calculation', required: true },
+  costItemId: { type: mongoose.Schema.Types.ObjectId, ref: 'CostItem' },
+  description: { type: String, required: true },
+  quantity: { type: Number, required: true, default: 1 },
+  unit: { type: String, required: true },
+  unitCost: { type: Number, required: true },
+  sortOrder: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now }
+});
 
-  -- Globale kostnadsposter (delt for alle brukere)
-  CREATE TABLE IF NOT EXISTS cost_items (
-    id TEXT PRIMARY KEY,
-    category_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    unit TEXT NOT NULL,
-    unit_price REAL NOT NULL,
-    sort_order INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (category_id) REFERENCES cost_categories(id) ON DELETE CASCADE
-  );
-
-  -- Kalkyler (regneark-stil)
-  CREATE TABLE IF NOT EXISTS calculations (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    target_margin_percent REAL DEFAULT 15,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-
-  -- Kalkulasjonslinjer
-  CREATE TABLE IF NOT EXISTS calculation_lines (
-    id TEXT PRIMARY KEY,
-    calculation_id TEXT NOT NULL,
-    cost_item_id TEXT,
-    description TEXT NOT NULL,
-    quantity REAL NOT NULL DEFAULT 1,
-    unit TEXT NOT NULL,
-    unit_cost REAL NOT NULL,
-    sort_order INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (calculation_id) REFERENCES calculations(id) ON DELETE CASCADE,
-    FOREIGN KEY (cost_item_id) REFERENCES cost_items(id) ON DELETE SET NULL
-  );
-
-  -- Indekser
-  CREATE INDEX IF NOT EXISTS idx_cost_items_category ON cost_items(category_id);
-  CREATE INDEX IF NOT EXISTS idx_calculations_user ON calculations(user_id);
-  CREATE INDEX IF NOT EXISTS idx_calculation_lines_calc ON calculation_lines(calculation_id);
-`);
+// === MODELS ===
+export const User = mongoose.model('User', userSchema);
+export const CostCategory = mongoose.model('CostCategory', costCategorySchema);
+export const CostItem = mongoose.model('CostItem', costItemSchema);
+export const Calculation = mongoose.model('Calculation', calculationSchema);
+export const CalculationLine = mongoose.model('CalculationLine', calculationLineSchema);
 
 // Seed standard kategorier hvis de ikke finnes
-const categoryCount = db.prepare('SELECT COUNT(*) as count FROM cost_categories').get() as { count: number };
-if (categoryCount.count === 0) {
-  const insertCategory = db.prepare('INSERT INTO cost_categories (id, name, type, sort_order) VALUES (?, ?, ?, ?)');
-
-  insertCategory.run('cat-labor', 'Arbeid', 'labor', 1);
-  insertCategory.run('cat-material', 'Materialer', 'material', 2);
-  insertCategory.run('cat-consumable', 'Forbruksmateriell', 'consumable', 3);
-  insertCategory.run('cat-transport', 'Transport', 'transport', 4);
-  insertCategory.run('cat-ndt', 'NDT', 'ndt', 5);
-
-  console.log('Standard kategorier opprettet');
+export async function seedCategories() {
+  const count = await CostCategory.countDocuments();
+  if (count === 0) {
+    await CostCategory.insertMany([
+      { name: 'Arbeid', type: 'labor', sortOrder: 1 },
+      { name: 'Materialer', type: 'material', sortOrder: 2 },
+      { name: 'Forbruksmateriell', type: 'consumable', sortOrder: 3 },
+      { name: 'Transport', type: 'transport', sortOrder: 4 },
+      { name: 'NDT', type: 'ndt', sortOrder: 5 }
+    ]);
+    console.log('Standard kategorier opprettet');
+  }
 }
 
-export default db;
+export default mongoose;

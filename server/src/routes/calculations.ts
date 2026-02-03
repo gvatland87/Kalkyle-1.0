@@ -1,6 +1,5 @@
 import { Router, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import db from '../database.js';
+import { Calculation, CalculationLine } from '../database.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
@@ -8,15 +7,22 @@ const router = Router();
 router.use(authenticateToken);
 
 // Hent alle kalkyler for bruker
-router.get('/', (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
-    const calculations = db.prepare(`
-      SELECT * FROM calculations
-      WHERE user_id = ?
-      ORDER BY updated_at DESC
-    `).all(req.userId);
+    const calculations = await Calculation.find({ userId: req.userId })
+      .sort({ updatedAt: -1 });
 
-    res.json({ calculations });
+    res.json({
+      calculations: calculations.map(calc => ({
+        id: calc._id,
+        user_id: calc.userId,
+        name: calc.name,
+        description: calc.description,
+        target_margin_percent: calc.targetMarginPercent,
+        created_at: calc.createdAt,
+        updated_at: calc.updatedAt
+      }))
+    });
   } catch (error) {
     console.error('Feil ved henting av kalkyler:', error);
     res.status(500).json({ error: 'Kunne ikke hente kalkyler' });
@@ -24,46 +30,48 @@ router.get('/', (req: AuthRequest, res: Response) => {
 });
 
 // Hent én kalkyle med linjer og summer
-router.get('/:id', (req: AuthRequest, res: Response) => {
+router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
-    const calculation = db.prepare(`
-      SELECT * FROM calculations WHERE id = ? AND user_id = ?
-    `).get(id, req.userId) as {
-      id: string;
-      name: string;
-      description: string;
-      target_margin_percent: number;
-    } | undefined;
+    const calculation = await Calculation.findOne({ _id: id, userId: req.userId });
 
     if (!calculation) {
       return res.status(404).json({ error: 'Kalkyle ikke funnet' });
     }
 
-    const lines = db.prepare(`
-      SELECT cl.*, ci.name as cost_item_name
-      FROM calculation_lines cl
-      LEFT JOIN cost_items ci ON cl.cost_item_id = ci.id
-      WHERE cl.calculation_id = ?
-      ORDER BY cl.sort_order, cl.created_at
-    `).all(id) as Array<{
-      id: string;
-      description: string;
-      quantity: number;
-      unit: string;
-      unit_cost: number;
-    }>;
+    const lines = await CalculationLine.find({ calculationId: id })
+      .populate('costItemId', 'name')
+      .sort({ sortOrder: 1, createdAt: 1 });
 
     // Beregn summer
-    const totalCost = lines.reduce((sum, line) => sum + (line.quantity * line.unit_cost), 0);
-    const marginPercent = calculation.target_margin_percent;
-    const totalSales = totalCost / (1 - marginPercent / 100);
+    const totalCost = lines.reduce((sum, line) => sum + (line.quantity * line.unitCost), 0);
+    const marginPercent = calculation.targetMarginPercent;
+    const totalSales = marginPercent >= 100 ? 0 : totalCost / (1 - marginPercent / 100);
     const marginAmount = totalSales - totalCost;
 
     res.json({
-      calculation,
-      lines,
+      calculation: {
+        id: calculation._id,
+        user_id: calculation.userId,
+        name: calculation.name,
+        description: calculation.description,
+        target_margin_percent: calculation.targetMarginPercent,
+        created_at: calculation.createdAt,
+        updated_at: calculation.updatedAt
+      },
+      lines: lines.map(line => ({
+        id: line._id,
+        calculation_id: line.calculationId,
+        cost_item_id: line.costItemId?._id || line.costItemId,
+        cost_item_name: (line.costItemId as any)?.name || '',
+        description: line.description,
+        quantity: line.quantity,
+        unit: line.unit,
+        unit_cost: line.unitCost,
+        sort_order: line.sortOrder,
+        created_at: line.createdAt
+      })),
       summary: {
         totalCost: Math.round(totalCost * 100) / 100,
         totalSales: Math.round(totalSales * 100) / 100,
@@ -78,7 +86,7 @@ router.get('/:id', (req: AuthRequest, res: Response) => {
 });
 
 // Opprett ny kalkyle
-router.post('/', (req: AuthRequest, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const { name, description, targetMarginPercent } = req.body;
 
@@ -86,14 +94,25 @@ router.post('/', (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Navn er påkrevd' });
     }
 
-    const id = uuidv4();
-    db.prepare(`
-      INSERT INTO calculations (id, user_id, name, description, target_margin_percent)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, req.userId, name, description || null, targetMarginPercent || 15);
+    const calculation = new Calculation({
+      userId: req.userId,
+      name,
+      description: description || null,
+      targetMarginPercent: targetMarginPercent || 15
+    });
+    await calculation.save();
 
-    const calculation = db.prepare('SELECT * FROM calculations WHERE id = ?').get(id);
-    res.status(201).json({ calculation });
+    res.status(201).json({
+      calculation: {
+        id: calculation._id,
+        user_id: calculation.userId,
+        name: calculation.name,
+        description: calculation.description,
+        target_margin_percent: calculation.targetMarginPercent,
+        created_at: calculation.createdAt,
+        updated_at: calculation.updatedAt
+      }
+    });
   } catch (error) {
     console.error('Feil ved opprettelse av kalkyle:', error);
     res.status(500).json({ error: 'Kunne ikke opprette kalkyle' });
@@ -101,42 +120,35 @@ router.post('/', (req: AuthRequest, res: Response) => {
 });
 
 // Oppdater kalkyle (navn, beskrivelse, DG%)
-router.put('/:id', (req: AuthRequest, res: Response) => {
+router.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { name, description, targetMarginPercent } = req.body;
 
-    const existing = db.prepare('SELECT id FROM calculations WHERE id = ? AND user_id = ?')
-      .get(id, req.userId);
+    const calculation = await Calculation.findOne({ _id: id, userId: req.userId });
 
-    if (!existing) {
+    if (!calculation) {
       return res.status(404).json({ error: 'Kalkyle ikke funnet' });
     }
 
-    const updates: string[] = [];
-    const values: (string | number | null)[] = [];
+    if (name !== undefined) calculation.name = name;
+    if (description !== undefined) calculation.description = description || undefined;
+    if (targetMarginPercent !== undefined) calculation.targetMarginPercent = targetMarginPercent;
+    calculation.updatedAt = new Date();
 
-    if (name !== undefined) {
-      updates.push('name = ?');
-      values.push(name);
-    }
-    if (description !== undefined) {
-      updates.push('description = ?');
-      values.push(description || null);
-    }
-    if (targetMarginPercent !== undefined) {
-      updates.push('target_margin_percent = ?');
-      values.push(targetMarginPercent);
-    }
+    await calculation.save();
 
-    if (updates.length > 0) {
-      updates.push('updated_at = datetime("now")');
-      values.push(id);
-      db.prepare(`UPDATE calculations SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-    }
-
-    const calculation = db.prepare('SELECT * FROM calculations WHERE id = ?').get(id);
-    res.json({ calculation });
+    res.json({
+      calculation: {
+        id: calculation._id,
+        user_id: calculation.userId,
+        name: calculation.name,
+        description: calculation.description,
+        target_margin_percent: calculation.targetMarginPercent,
+        created_at: calculation.createdAt,
+        updated_at: calculation.updatedAt
+      }
+    });
   } catch (error) {
     console.error('Feil ved oppdatering av kalkyle:', error);
     res.status(500).json({ error: 'Kunne ikke oppdatere kalkyle' });
@@ -144,18 +156,19 @@ router.put('/:id', (req: AuthRequest, res: Response) => {
 });
 
 // Slett kalkyle
-router.delete('/:id', (req: AuthRequest, res: Response) => {
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
-    const existing = db.prepare('SELECT id FROM calculations WHERE id = ? AND user_id = ?')
-      .get(id, req.userId);
+    const calculation = await Calculation.findOneAndDelete({ _id: id, userId: req.userId });
 
-    if (!existing) {
+    if (!calculation) {
       return res.status(404).json({ error: 'Kalkyle ikke funnet' });
     }
 
-    db.prepare('DELETE FROM calculations WHERE id = ?').run(id);
+    // Slett alle linjer tilknyttet kalkylen
+    await CalculationLine.deleteMany({ calculationId: id });
+
     res.json({ message: 'Kalkyle slettet' });
   } catch (error) {
     console.error('Feil ved sletting av kalkyle:', error);
@@ -166,14 +179,13 @@ router.delete('/:id', (req: AuthRequest, res: Response) => {
 // === LINJER ===
 
 // Legg til linje
-router.post('/:id/lines', (req: AuthRequest, res: Response) => {
+router.post('/:id/lines', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { costItemId, description, quantity, unit, unitCost } = req.body;
 
     // Sjekk at kalkylen tilhører brukeren
-    const calculation = db.prepare('SELECT id FROM calculations WHERE id = ? AND user_id = ?')
-      .get(id, req.userId);
+    const calculation = await Calculation.findOne({ _id: id, userId: req.userId });
 
     if (!calculation) {
       return res.status(404).json({ error: 'Kalkyle ikke funnet' });
@@ -183,23 +195,39 @@ router.post('/:id/lines', (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: 'Beskrivelse, antall, enhet og enhetskost er påkrevd' });
     }
 
-    const lineId = uuidv4();
-
     // Finn høyeste sort_order
-    const maxOrder = db.prepare(`
-      SELECT COALESCE(MAX(sort_order), 0) as max_order FROM calculation_lines WHERE calculation_id = ?
-    `).get(id) as { max_order: number };
+    const maxOrderLine = await CalculationLine.findOne({ calculationId: id })
+      .sort({ sortOrder: -1 });
+    const nextOrder = (maxOrderLine?.sortOrder || 0) + 1;
 
-    db.prepare(`
-      INSERT INTO calculation_lines (id, calculation_id, cost_item_id, description, quantity, unit, unit_cost, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(lineId, id, costItemId || null, description, quantity, unit, unitCost, maxOrder.max_order + 1);
+    const line = new CalculationLine({
+      calculationId: id,
+      costItemId: costItemId || null,
+      description,
+      quantity,
+      unit,
+      unitCost,
+      sortOrder: nextOrder
+    });
+    await line.save();
 
     // Oppdater kalkylens updated_at
-    db.prepare('UPDATE calculations SET updated_at = datetime("now") WHERE id = ?').run(id);
+    calculation.updatedAt = new Date();
+    await calculation.save();
 
-    const line = db.prepare('SELECT * FROM calculation_lines WHERE id = ?').get(lineId);
-    res.status(201).json({ line });
+    res.status(201).json({
+      line: {
+        id: line._id,
+        calculation_id: line.calculationId,
+        cost_item_id: line.costItemId,
+        description: line.description,
+        quantity: line.quantity,
+        unit: line.unit,
+        unit_cost: line.unitCost,
+        sort_order: line.sortOrder,
+        created_at: line.createdAt
+      }
+    });
   } catch (error) {
     console.error('Feil ved opprettelse av linje:', error);
     res.status(500).json({ error: 'Kunne ikke opprette linje' });
@@ -207,54 +235,48 @@ router.post('/:id/lines', (req: AuthRequest, res: Response) => {
 });
 
 // Oppdater linje
-router.put('/:id/lines/:lineId', (req: AuthRequest, res: Response) => {
+router.put('/:id/lines/:lineId', async (req: AuthRequest, res: Response) => {
   try {
     const { id, lineId } = req.params;
     const { description, quantity, unit, unitCost } = req.body;
 
     // Sjekk at kalkylen tilhører brukeren
-    const calculation = db.prepare('SELECT id FROM calculations WHERE id = ? AND user_id = ?')
-      .get(id, req.userId);
+    const calculation = await Calculation.findOne({ _id: id, userId: req.userId });
 
     if (!calculation) {
       return res.status(404).json({ error: 'Kalkyle ikke funnet' });
     }
 
-    const existing = db.prepare('SELECT id FROM calculation_lines WHERE id = ? AND calculation_id = ?')
-      .get(lineId, id);
+    const line = await CalculationLine.findOne({ _id: lineId, calculationId: id });
 
-    if (!existing) {
+    if (!line) {
       return res.status(404).json({ error: 'Linje ikke funnet' });
     }
 
-    const updates: string[] = [];
-    const values: (string | number | null)[] = [];
+    if (description !== undefined) line.description = description;
+    if (quantity !== undefined) line.quantity = quantity;
+    if (unit !== undefined) line.unit = unit;
+    if (unitCost !== undefined) line.unitCost = unitCost;
 
-    if (description !== undefined) {
-      updates.push('description = ?');
-      values.push(description);
-    }
-    if (quantity !== undefined) {
-      updates.push('quantity = ?');
-      values.push(quantity);
-    }
-    if (unit !== undefined) {
-      updates.push('unit = ?');
-      values.push(unit);
-    }
-    if (unitCost !== undefined) {
-      updates.push('unit_cost = ?');
-      values.push(unitCost);
-    }
+    await line.save();
 
-    if (updates.length > 0) {
-      values.push(lineId);
-      db.prepare(`UPDATE calculation_lines SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-      db.prepare('UPDATE calculations SET updated_at = datetime("now") WHERE id = ?').run(id);
-    }
+    // Oppdater kalkylens updated_at
+    calculation.updatedAt = new Date();
+    await calculation.save();
 
-    const line = db.prepare('SELECT * FROM calculation_lines WHERE id = ?').get(lineId);
-    res.json({ line });
+    res.json({
+      line: {
+        id: line._id,
+        calculation_id: line.calculationId,
+        cost_item_id: line.costItemId,
+        description: line.description,
+        quantity: line.quantity,
+        unit: line.unit,
+        unit_cost: line.unitCost,
+        sort_order: line.sortOrder,
+        created_at: line.createdAt
+      }
+    });
   } catch (error) {
     console.error('Feil ved oppdatering av linje:', error);
     res.status(500).json({ error: 'Kunne ikke oppdatere linje' });
@@ -262,27 +284,26 @@ router.put('/:id/lines/:lineId', (req: AuthRequest, res: Response) => {
 });
 
 // Slett linje
-router.delete('/:id/lines/:lineId', (req: AuthRequest, res: Response) => {
+router.delete('/:id/lines/:lineId', async (req: AuthRequest, res: Response) => {
   try {
     const { id, lineId } = req.params;
 
     // Sjekk at kalkylen tilhører brukeren
-    const calculation = db.prepare('SELECT id FROM calculations WHERE id = ? AND user_id = ?')
-      .get(id, req.userId);
+    const calculation = await Calculation.findOne({ _id: id, userId: req.userId });
 
     if (!calculation) {
       return res.status(404).json({ error: 'Kalkyle ikke funnet' });
     }
 
-    const existing = db.prepare('SELECT id FROM calculation_lines WHERE id = ? AND calculation_id = ?')
-      .get(lineId, id);
+    const line = await CalculationLine.findOneAndDelete({ _id: lineId, calculationId: id });
 
-    if (!existing) {
+    if (!line) {
       return res.status(404).json({ error: 'Linje ikke funnet' });
     }
 
-    db.prepare('DELETE FROM calculation_lines WHERE id = ?').run(lineId);
-    db.prepare('UPDATE calculations SET updated_at = datetime("now") WHERE id = ?').run(id);
+    // Oppdater kalkylens updated_at
+    calculation.updatedAt = new Date();
+    await calculation.save();
 
     res.json({ message: 'Linje slettet' });
   } catch (error) {

@@ -1,6 +1,5 @@
 import { Router, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import db from '../database.js';
+import { CostItem, CostCategory } from '../database.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
@@ -8,26 +7,33 @@ const router = Router();
 router.use(authenticateToken);
 
 // Hent alle kostnadsposter (globale - tilgjengelige for alle)
-router.get('/', (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { categoryId } = req.query;
 
-    let query = `
-      SELECT ci.*, cc.name as category_name, cc.type as category_type
-      FROM cost_items ci
-      JOIN cost_categories cc ON ci.category_id = cc.id
-    `;
-    const params: string[] = [];
-
+    let query: any = {};
     if (categoryId) {
-      query += ' WHERE ci.category_id = ?';
-      params.push(categoryId as string);
+      query.categoryId = categoryId;
     }
 
-    query += ' ORDER BY cc.sort_order, cc.name, ci.sort_order, ci.name';
+    const items = await CostItem.find(query)
+      .populate('categoryId', 'name type sortOrder')
+      .sort({ sortOrder: 1, name: 1 });
 
-    const items = db.prepare(query).all(...params);
-    res.json({ items });
+    res.json({
+      items: items.map(item => ({
+        id: item._id,
+        category_id: item.categoryId?._id || item.categoryId,
+        name: item.name,
+        description: item.description,
+        unit: item.unit,
+        unit_price: item.unitPrice,
+        category_name: (item.categoryId as any)?.name || '',
+        category_type: (item.categoryId as any)?.type || '',
+        created_at: item.createdAt,
+        updated_at: item.updatedAt
+      }))
+    });
   } catch (error) {
     console.error('Feil ved henting av kostnadsposter:', error);
     res.status(500).json({ error: 'Kunne ikke hente kostnadsposter' });
@@ -35,32 +41,29 @@ router.get('/', (req: AuthRequest, res: Response) => {
 });
 
 // Hent kostnadsposter gruppert etter kategori
-router.get('/grouped', (req: AuthRequest, res: Response) => {
+router.get('/grouped', async (req: AuthRequest, res: Response) => {
   try {
-    const items = db.prepare(`
-      SELECT ci.*, cc.name as category_name, cc.type as category_type
-      FROM cost_items ci
-      JOIN cost_categories cc ON ci.category_id = cc.id
-      ORDER BY cc.sort_order, cc.name, ci.sort_order, ci.name
-    `).all() as Array<{
-      id: string;
-      category_id: string;
-      name: string;
-      description: string;
-      unit: string;
-      unit_price: number;
-      category_name: string;
-      category_type: string;
-    }>;
+    const items = await CostItem.find()
+      .populate('categoryId', 'name type sortOrder')
+      .sort({ sortOrder: 1, name: 1 });
 
     const grouped = items.reduce((acc, item) => {
-      const key = item.category_type;
-      if (!acc[key]) {
-        acc[key] = [];
+      const categoryType = (item.categoryId as any)?.type || 'unknown';
+      if (!acc[categoryType]) {
+        acc[categoryType] = [];
       }
-      acc[key].push(item);
+      acc[categoryType].push({
+        id: item._id,
+        category_id: item.categoryId?._id || item.categoryId,
+        name: item.name,
+        description: item.description,
+        unit: item.unit,
+        unit_price: item.unitPrice,
+        category_name: (item.categoryId as any)?.name || '',
+        category_type: categoryType
+      });
       return acc;
-    }, {} as Record<string, typeof items>);
+    }, {} as Record<string, any[]>);
 
     res.json({ items: grouped });
   } catch (error) {
@@ -70,30 +73,35 @@ router.get('/grouped', (req: AuthRequest, res: Response) => {
 });
 
 // Hent én kostnadspost
-router.get('/:id', (req: AuthRequest, res: Response) => {
+router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
-
-    const item = db.prepare(`
-      SELECT ci.*, cc.name as category_name, cc.type as category_type
-      FROM cost_items ci
-      JOIN cost_categories cc ON ci.category_id = cc.id
-      WHERE ci.id = ?
-    `).get(id);
+    const item = await CostItem.findById(req.params.id)
+      .populate('categoryId', 'name type');
 
     if (!item) {
       return res.status(404).json({ error: 'Kostnadspost ikke funnet' });
     }
 
-    res.json({ item });
+    res.json({
+      item: {
+        id: item._id,
+        category_id: item.categoryId?._id || item.categoryId,
+        name: item.name,
+        description: item.description,
+        unit: item.unit,
+        unit_price: item.unitPrice,
+        category_name: (item.categoryId as any)?.name || '',
+        category_type: (item.categoryId as any)?.type || ''
+      }
+    });
   } catch (error) {
     console.error('Feil ved henting av kostnadspost:', error);
     res.status(500).json({ error: 'Kunne ikke hente kostnadspost' });
   }
 });
 
-// Opprett kostnadspost (kun admin kan legge til globale priser)
-router.post('/', (req: AuthRequest, res: Response) => {
+// Opprett kostnadspost
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const { categoryId, name, description, unit, unitPrice } = req.body;
 
@@ -102,26 +110,32 @@ router.post('/', (req: AuthRequest, res: Response) => {
     }
 
     // Sjekk at kategorien finnes
-    const category = db.prepare('SELECT id FROM cost_categories WHERE id = ?').get(categoryId);
-
+    const category = await CostCategory.findById(categoryId);
     if (!category) {
       return res.status(404).json({ error: 'Kategori ikke funnet' });
     }
 
-    const id = uuidv4();
-    db.prepare(`
-      INSERT INTO cost_items (id, category_id, name, description, unit, unit_price)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, categoryId, name, description || null, unit, unitPrice);
+    const item = new CostItem({
+      categoryId,
+      name,
+      description: description || null,
+      unit,
+      unitPrice
+    });
+    await item.save();
 
-    const item = db.prepare(`
-      SELECT ci.*, cc.name as category_name, cc.type as category_type
-      FROM cost_items ci
-      JOIN cost_categories cc ON ci.category_id = cc.id
-      WHERE ci.id = ?
-    `).get(id);
-
-    res.status(201).json({ item });
+    res.status(201).json({
+      item: {
+        id: item._id,
+        category_id: categoryId,
+        name: item.name,
+        description: item.description,
+        unit: item.unit,
+        unit_price: item.unitPrice,
+        category_name: category.name,
+        category_type: category.type
+      }
+    });
   } catch (error) {
     console.error('Feil ved opprettelse av kostnadspost:', error);
     res.status(500).json({ error: 'Kunne ikke opprette kostnadspost' });
@@ -129,51 +143,37 @@ router.post('/', (req: AuthRequest, res: Response) => {
 });
 
 // Oppdater kostnadspost
-router.put('/:id', (req: AuthRequest, res: Response) => {
+router.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
     const { name, description, unit, unitPrice } = req.body;
 
-    const existing = db.prepare('SELECT id FROM cost_items WHERE id = ?').get(id);
-
-    if (!existing) {
+    const item = await CostItem.findById(req.params.id);
+    if (!item) {
       return res.status(404).json({ error: 'Kostnadspost ikke funnet' });
     }
 
-    const updates: string[] = [];
-    const values: (string | number | null)[] = [];
+    if (name !== undefined) item.name = name;
+    if (description !== undefined) item.description = description || undefined;
+    if (unit !== undefined) item.unit = unit;
+    if (unitPrice !== undefined) item.unitPrice = unitPrice;
+    item.updatedAt = new Date();
 
-    if (name !== undefined) {
-      updates.push('name = ?');
-      values.push(name);
-    }
-    if (description !== undefined) {
-      updates.push('description = ?');
-      values.push(description || null);
-    }
-    if (unit !== undefined) {
-      updates.push('unit = ?');
-      values.push(unit);
-    }
-    if (unitPrice !== undefined) {
-      updates.push('unit_price = ?');
-      values.push(unitPrice);
-    }
+    await item.save();
 
-    if (updates.length > 0) {
-      updates.push('updated_at = datetime("now")');
-      values.push(id);
-      db.prepare(`UPDATE cost_items SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-    }
+    const category = await CostCategory.findById(item.categoryId);
 
-    const item = db.prepare(`
-      SELECT ci.*, cc.name as category_name, cc.type as category_type
-      FROM cost_items ci
-      JOIN cost_categories cc ON ci.category_id = cc.id
-      WHERE ci.id = ?
-    `).get(id);
-
-    res.json({ item });
+    res.json({
+      item: {
+        id: item._id,
+        category_id: item.categoryId,
+        name: item.name,
+        description: item.description,
+        unit: item.unit,
+        unit_price: item.unitPrice,
+        category_name: category?.name || '',
+        category_type: category?.type || ''
+      }
+    });
   } catch (error) {
     console.error('Feil ved oppdatering av kostnadspost:', error);
     res.status(500).json({ error: 'Kunne ikke oppdatere kostnadspost' });
@@ -181,17 +181,14 @@ router.put('/:id', (req: AuthRequest, res: Response) => {
 });
 
 // Slett kostnadspost
-router.delete('/:id', (req: AuthRequest, res: Response) => {
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const item = await CostItem.findByIdAndDelete(req.params.id);
 
-    const existing = db.prepare('SELECT id FROM cost_items WHERE id = ?').get(id);
-
-    if (!existing) {
+    if (!item) {
       return res.status(404).json({ error: 'Kostnadspost ikke funnet' });
     }
 
-    db.prepare('DELETE FROM cost_items WHERE id = ?').run(id);
     res.json({ message: 'Kostnadspost slettet' });
   } catch (error) {
     console.error('Feil ved sletting av kostnadspost:', error);

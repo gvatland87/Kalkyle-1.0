@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import './database.js'; // Initialiser database
+import { seedCategories } from './database.js';
 
 import authRoutes from './routes/auth.js';
 import categoriesRoutes from './routes/categories.js';
@@ -9,6 +9,9 @@ import calculationsRoutes from './routes/calculations.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Seed kategorier ved oppstart
+seedCategories();
 
 // CORS - tillat frontend domene
 const allowedOrigins = [
@@ -49,6 +52,7 @@ app.get('/', (req, res) => {
   res.json({
     name: 'Kalkyle 1.0 API',
     version: '2.0.0',
+    database: 'MongoDB',
     status: 'running'
   });
 });
