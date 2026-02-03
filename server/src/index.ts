@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { seedCategories } from './database.js';
+import { connectDB } from './database.js';
 
 import authRoutes from './routes/auth.js';
 import categoriesRoutes from './routes/categories.js';
@@ -9,9 +9,6 @@ import calculationsRoutes from './routes/calculations.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
-// Seed kategorier ved oppstart
-seedCategories();
 
 // CORS - tillat frontend domene
 const allowedOrigins = [
@@ -63,6 +60,9 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   res.status(500).json({ error: 'Noe gikk galt!' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server kjører på port ${PORT}`);
+// Koble til database og start server
+connectDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Server kjører på port ${PORT}`);
+  });
 });

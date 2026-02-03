@@ -2,11 +2,6 @@ import mongoose from 'mongoose';
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/kalkyle';
 
-// Koble til MongoDB
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('Koblet til MongoDB'))
-  .catch((err) => console.error('MongoDB tilkoblingsfeil:', err));
-
 // === SCHEMAS ===
 
 // Bruker
@@ -68,7 +63,7 @@ export const Calculation = mongoose.model('Calculation', calculationSchema);
 export const CalculationLine = mongoose.model('CalculationLine', calculationLineSchema);
 
 // Seed standard kategorier hvis de ikke finnes
-export async function seedCategories() {
+async function seedCategories() {
   const count = await CostCategory.countDocuments();
   if (count === 0) {
     await CostCategory.insertMany([
@@ -79,6 +74,18 @@ export async function seedCategories() {
       { name: 'NDT', type: 'ndt', sortOrder: 5 }
     ]);
     console.log('Standard kategorier opprettet');
+  }
+}
+
+// Koble til MongoDB og seed data
+export async function connectDB() {
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log('Koblet til MongoDB');
+    await seedCategories();
+  } catch (err) {
+    console.error('MongoDB tilkoblingsfeil:', err);
+    process.exit(1);
   }
 }
 
