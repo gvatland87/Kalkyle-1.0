@@ -3,9 +3,14 @@ import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'kalkyle-secret-key-change-in-production';
 
+// Extend Express Request with auth properties
 export interface AuthRequest extends Request {
   userId?: string;
   userRole?: string;
+  // Explicitly include Request properties for TypeScript strict mode
+  body: Record<string, unknown>;
+  params: Record<string, string>;
+  query: Record<string, unknown>;
 }
 
 export interface JwtPayload {
