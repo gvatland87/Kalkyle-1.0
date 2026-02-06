@@ -31,6 +31,9 @@ export default function Layout() {
   const [kiloAmount, setKiloAmount] = useState<number>(0);
   const [kiloPrice, setKiloPrice] = useState<number>(0);
 
+  // Beregningsvalg: separat eller samlet
+  const [calcMode, setCalcMode] = useState<'separate' | 'combined'>('separate');
+
   // Last inn kostpriser ved oppstart
   useEffect(() => {
     const loadCostItems = async () => {
@@ -62,9 +65,17 @@ export default function Layout() {
   // Beregn salgspris basert på enhetspris, antall, kilo og DG
   const lineCost1 = unitPrice * quantity;
   const lineCost2 = kiloAmount * kiloPrice;
+
+  // Separate beregninger per linje
+  const salesPrice1 = targetDG >= 100 ? 0 : lineCost1 / (1 - targetDG / 100);
+  const margin1 = salesPrice1 - lineCost1;
+  const salesPrice2 = targetDG >= 100 ? 0 : lineCost2 / (1 - targetDG / 100);
+  const margin2 = salesPrice2 - lineCost2;
+
+  // Samlet beregning
   const totalCost = lineCost1 + lineCost2;
-  const salesPrice = targetDG >= 100 ? 0 : totalCost / (1 - targetDG / 100);
-  const margin = salesPrice - totalCost;
+  const totalSalesPrice = targetDG >= 100 ? 0 : totalCost / (1 - targetDG / 100);
+  const totalMargin = totalSalesPrice - totalCost;
 
   // Grupper kostpriser etter kategori
   const groupedCostItems = costItems.reduce((acc, item) => {
@@ -92,105 +103,9 @@ export default function Layout() {
     <div className="min-h-screen bg-gray-50">
       {/* Top navbar - DG Kalkulator */}
       <div className="lg:ml-64 bg-white border-b border-gray-200 px-4 py-2">
-        {/* Linje 1 - Enhetspris/Antall */}
-        <div className="flex flex-wrap items-center gap-3 mb-2">
-          <span className="text-sm font-medium text-gray-700 w-24">Linje 1:</span>
-
-          {/* Dropdown for kostpriser */}
-          <div className="flex items-center gap-1">
-            <select
-              value={selectedCostItem}
-              onChange={(e) => handleCostItemSelect(e.target.value)}
-              className="w-44 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-            >
-              <option value="">-- Velg kostpris --</option>
-              {Object.entries(groupedCostItems).map(([type, items]) => (
-                <optgroup key={type} label={categoryLabels[type] || type}>
-                  {items.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.unit_price} kr/{item.unit})
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Enhetspris</label>
-            <input
-              type="number"
-              value={unitPrice || ''}
-              onChange={(e) => {
-                setUnitPrice(Number(e.target.value));
-                setSelectedCostItem(''); // Nullstill valg ved manuell endring
-              }}
-              className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="kr"
-              min="0"
-              step="0.01"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Antall</label>
-            <input
-              type="number"
-              value={quantity || ''}
-              onChange={(e) => setQuantity(Number(e.target.value))}
-              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="stk"
-              min="0"
-              step="0.1"
-            />
-            <span className="text-xs text-gray-500">{unit}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">= Sum</label>
-            <span className="text-sm font-medium text-gray-700">{lineCost1.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
-          </div>
-        </div>
-
-        {/* Linje 2 - Kilo/Tonnasje */}
-        <div className="flex flex-wrap items-center gap-3 mb-2">
-          <span className="text-sm font-medium text-gray-700 w-24">Linje 2:</span>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Kilo (kg)</label>
-            <input
-              type="number"
-              value={kiloAmount || ''}
-              onChange={(e) => setKiloAmount(Number(e.target.value))}
-              className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="0"
-              min="0"
-              step="0.1"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Kilopris (kr/kg)</label>
-            <input
-              type="number"
-              value={kiloPrice || ''}
-              onChange={(e) => setKiloPrice(Number(e.target.value))}
-              className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="0"
-              min="0"
-              step="0.01"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">= Sum</label>
-            <span className="text-sm font-medium text-gray-700">{lineCost2.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
-          </div>
-        </div>
-
-        {/* Resultat-linje */}
-        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-200">
-          <span className="text-sm font-medium text-gray-700 w-24">Resultat:</span>
+        {/* Header med DG og beregningsvalg */}
+        <div className="flex flex-wrap items-center gap-4 mb-2 pb-2 border-b border-gray-100">
+          <span className="text-sm font-bold text-gray-800">Hurtigkalkulator</span>
 
           <div className="flex items-center gap-2">
             <label className="text-xs text-gray-500">DG %</label>
@@ -204,23 +119,130 @@ export default function Layout() {
             />
           </div>
 
-          <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
-
-          <div className="flex items-center gap-4 text-sm">
-            <div>
-              <span className="text-gray-500">Total kost: </span>
-              <span className="font-medium">{totalCost.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Salgspris: </span>
-              <span className="font-bold text-green-600">{salesPrice.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
-            </div>
-            <div>
-              <span className="text-gray-500">DB: </span>
-              <span className="font-medium text-blue-600">{margin.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
-            </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => setCalcMode('separate')}
+              className={`px-3 py-1 text-xs rounded ${calcMode === 'separate' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Separat
+            </button>
+            <button
+              onClick={() => setCalcMode('combined')}
+              className={`px-3 py-1 text-xs rounded ${calcMode === 'combined' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+            >
+              Samlet
+            </button>
           </div>
         </div>
+
+        {/* Linje 1 - Arbeid/Enhetspris */}
+        <div className="flex flex-wrap items-center gap-3 mb-2">
+          <span className="text-sm font-medium text-gray-700 w-20">Arbeid:</span>
+
+          {/* Dropdown for kostpriser */}
+          <select
+            value={selectedCostItem}
+            onChange={(e) => handleCostItemSelect(e.target.value)}
+            className="w-40 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="">-- Velg --</option>
+            {Object.entries(groupedCostItems).map(([type, items]) => (
+              <optgroup key={type} label={categoryLabels[type] || type}>
+                {items.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} ({item.unit_price} kr/{item.unit})
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={unitPrice || ''}
+              onChange={(e) => {
+                setUnitPrice(Number(e.target.value));
+                setSelectedCostItem('');
+              }}
+              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Pris"
+              min="0"
+            />
+            <span className="text-xs text-gray-400">×</span>
+            <input
+              type="number"
+              value={quantity || ''}
+              onChange={(e) => setQuantity(Number(e.target.value))}
+              className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Ant"
+              min="0"
+            />
+            <span className="text-xs text-gray-500">{unit}</span>
+          </div>
+
+          <div className="h-5 w-px bg-gray-300"></div>
+
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-gray-600">Kost: <span className="font-medium">{lineCost1.toLocaleString('nb-NO')} kr</span></span>
+            {calcMode === 'separate' && lineCost1 > 0 && (
+              <>
+                <span className="text-green-600">Salg: <span className="font-bold">{salesPrice1.toLocaleString('nb-NO')} kr</span></span>
+                <span className="text-blue-600">DB: <span className="font-medium">{margin1.toLocaleString('nb-NO')} kr</span></span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Linje 2 - Materiale/Kilo */}
+        <div className="flex flex-wrap items-center gap-3 mb-2">
+          <span className="text-sm font-medium text-gray-700 w-20">Materiale:</span>
+
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={kiloPrice || ''}
+              onChange={(e) => setKiloPrice(Number(e.target.value))}
+              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="kr/kg"
+              min="0"
+            />
+            <span className="text-xs text-gray-400">×</span>
+            <input
+              type="number"
+              value={kiloAmount || ''}
+              onChange={(e) => setKiloAmount(Number(e.target.value))}
+              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="kg"
+              min="0"
+            />
+            <span className="text-xs text-gray-500">kg</span>
+          </div>
+
+          <div className="h-5 w-px bg-gray-300"></div>
+
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-gray-600">Kost: <span className="font-medium">{lineCost2.toLocaleString('nb-NO')} kr</span></span>
+            {calcMode === 'separate' && lineCost2 > 0 && (
+              <>
+                <span className="text-green-600">Salg: <span className="font-bold">{salesPrice2.toLocaleString('nb-NO')} kr</span></span>
+                <span className="text-blue-600">DB: <span className="font-medium">{margin2.toLocaleString('nb-NO')} kr</span></span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Samlet resultat (vises kun i combined mode) */}
+        {calcMode === 'combined' && (lineCost1 > 0 || lineCost2 > 0) && (
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-200">
+            <span className="text-sm font-bold text-gray-700 w-20">Totalt:</span>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-gray-600">Kost: <span className="font-medium">{totalCost.toLocaleString('nb-NO')} kr</span></span>
+              <span className="text-green-600">Salg: <span className="font-bold">{totalSalesPrice.toLocaleString('nb-NO')} kr</span></span>
+              <span className="text-blue-600">DB: <span className="font-medium">{totalMargin.toLocaleString('nb-NO')} kr</span></span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sidebar */}
