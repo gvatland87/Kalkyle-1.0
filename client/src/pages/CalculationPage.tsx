@@ -49,6 +49,13 @@ export default function CalculationPage() {
   const [newLineUnit, setNewLineUnit] = useState('stk');
   const [newLineCost, setNewLineCost] = useState(0);
 
+  // Edit line state
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [editLineDesc, setEditLineDesc] = useState('');
+  const [editLineQty, setEditLineQty] = useState(1);
+  const [editLineUnit, setEditLineUnit] = useState('');
+  const [editLineCost, setEditLineCost] = useState(0);
+
   // Load cost items
   useEffect(() => {
     const loadCostItems = async () => {
@@ -181,6 +188,60 @@ export default function CalculationPage() {
       setLines(lines.filter(l => l.id !== lineId));
     } catch (error) {
       console.error('Feil ved sletting av linje:', error);
+    }
+  };
+
+  // Start editing a line
+  const handleStartEdit = (line: CalculationLine) => {
+    setEditingLineId(line.id);
+    setEditLineDesc(line.description);
+    setEditLineQty(line.quantity);
+    setEditLineUnit(line.unit);
+    setEditLineCost(line.unit_cost);
+  };
+
+  // Cancel editing
+  const handleCancelEdit = () => {
+    setEditingLineId(null);
+    setEditLineDesc('');
+    setEditLineQty(1);
+    setEditLineUnit('');
+    setEditLineCost(0);
+  };
+
+  // Save edited line
+  const handleSaveEdit = async () => {
+    if (!calculation || !editingLineId) return;
+
+    if (!editLineDesc.trim() || editLineQty <= 0 || editLineCost < 0) {
+      alert('Vennligst fyll ut alle felt');
+      return;
+    }
+
+    try {
+      const response = await api.put(`/calculations/${calculation.id}/lines/${editingLineId}`, {
+        description: editLineDesc,
+        quantity: editLineQty,
+        unit: editLineUnit,
+        unitCost: editLineCost
+      });
+
+      setLines(lines.map(l =>
+        l.id === editingLineId
+          ? {
+              ...l,
+              description: response.data.line.description,
+              quantity: response.data.line.quantity,
+              unit: response.data.line.unit,
+              unit_cost: response.data.line.unit_cost
+            }
+          : l
+      ));
+
+      handleCancelEdit();
+    } catch (error) {
+      console.error('Feil ved oppdatering av linje:', error);
+      alert('Kunne ikke oppdatere linje');
     }
   };
 
@@ -389,39 +450,118 @@ export default function CalculationPage() {
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Enhet</th>
                 <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Enhetskost</th>
                 <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Sum Kost</th>
-                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Slett</th>
+                <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Handlinger</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                     Ingen linjer lagt til enda. Bruk skjemaet over for å legge til linjer.
                   </td>
                 </tr>
               ) : (
                 lines.map((line) => (
-                  <tr key={line.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">{line.description}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 text-right">{line.quantity}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{line.unit}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                      {line.unit_cost.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">
-                      {(line.quantity * line.unit_cost).toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => handleDeleteLine(line.id)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Slett linje"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </td>
+                  <tr key={line.id} className={`hover:bg-gray-50 ${editingLineId === line.id ? 'bg-blue-50' : ''}`}>
+                    {editingLineId === line.id ? (
+                      <>
+                        <td className="px-4 py-2">
+                          <input
+                            type="text"
+                            value={editLineDesc}
+                            onChange={(e) => setEditLineDesc(e.target.value)}
+                            className="w-full px-2 py-1 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="number"
+                            value={editLineQty}
+                            onChange={(e) => setEditLineQty(Number(e.target.value))}
+                            min="0"
+                            step="0.5"
+                            className="w-20 px-2 py-1 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right"
+                          />
+                        </td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="text"
+                            value={editLineUnit}
+                            onChange={(e) => setEditLineUnit(e.target.value)}
+                            className="w-20 px-2 py-1 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                          />
+                        </td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="number"
+                            value={editLineCost}
+                            onChange={(e) => setEditLineCost(Number(e.target.value))}
+                            min="0"
+                            step="0.01"
+                            className="w-24 px-2 py-1 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-right"
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
+                          {(editLineQty * editLineCost).toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={handleSaveEdit}
+                              className="text-green-600 hover:text-green-800"
+                              title="Lagre"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={handleCancelEdit}
+                              className="text-gray-600 hover:text-gray-800"
+                              title="Avbryt"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-4 py-3 text-sm text-gray-900">{line.description}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right">{line.quantity}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{line.unit}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right">
+                          {line.unit_cost.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">
+                          {(line.quantity * line.unit_cost).toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handleStartEdit(line)}
+                              className="text-blue-600 hover:text-blue-800"
+                              title="Rediger linje"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteLine(line.id)}
+                              className="text-red-600 hover:text-red-800"
+                              title="Slett linje"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))
               )}
