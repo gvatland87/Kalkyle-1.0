@@ -21,11 +21,15 @@ export default function Layout() {
   const [costItems, setCostItems] = useState<CostItem[]>([]);
   const [selectedCostItem, setSelectedCostItem] = useState<string>('');
 
-  // DG Kalkulator state
+  // DG Kalkulator state - Linje 1
   const [unitPrice, setUnitPrice] = useState<number>(0);
   const [quantity, setQuantity] = useState<number>(1);
   const [unit, setUnit] = useState<string>('stk');
   const [targetDG, setTargetDG] = useState<number>(15);
+
+  // DG Kalkulator state - Linje 2 (Kilo/Tonnasje)
+  const [kiloAmount, setKiloAmount] = useState<number>(0);
+  const [kiloPrice, setKiloPrice] = useState<number>(0);
 
   // Last inn kostpriser ved oppstart
   useEffect(() => {
@@ -55,8 +59,10 @@ export default function Layout() {
     }
   };
 
-  // Beregn salgspris basert på enhetspris, antall og DG
-  const totalCost = unitPrice * quantity;
+  // Beregn salgspris basert på enhetspris, antall, kilo og DG
+  const lineCost1 = unitPrice * quantity;
+  const lineCost2 = kiloAmount * kiloPrice;
+  const totalCost = lineCost1 + lineCost2;
   const salesPrice = targetDG >= 100 ? 0 : totalCost / (1 - targetDG / 100);
   const margin = salesPrice - totalCost;
 
@@ -85,9 +91,10 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top navbar - DG Kalkulator */}
-      <div className="lg:ml-64 bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-gray-700">Hurtigkalkulator:</span>
+      <div className="lg:ml-64 bg-white border-b border-gray-200 px-4 py-2">
+        {/* Linje 1 - Enhetspris/Antall */}
+        <div className="flex flex-wrap items-center gap-3 mb-2">
+          <span className="text-sm font-medium text-gray-700 w-24">Linje 1:</span>
 
           {/* Dropdown for kostpriser */}
           <div className="flex items-center gap-1">
@@ -140,6 +147,52 @@ export default function Layout() {
           </div>
 
           <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">= Sum</label>
+            <span className="text-sm font-medium text-gray-700">{lineCost1.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
+          </div>
+        </div>
+
+        {/* Linje 2 - Kilo/Tonnasje */}
+        <div className="flex flex-wrap items-center gap-3 mb-2">
+          <span className="text-sm font-medium text-gray-700 w-24">Linje 2:</span>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">Kilo (kg)</label>
+            <input
+              type="number"
+              value={kiloAmount || ''}
+              onChange={(e) => setKiloAmount(Number(e.target.value))}
+              className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="0"
+              min="0"
+              step="0.1"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">Kilopris (kr/kg)</label>
+            <input
+              type="number"
+              value={kiloPrice || ''}
+              onChange={(e) => setKiloPrice(Number(e.target.value))}
+              className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="0"
+              min="0"
+              step="0.01"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">= Sum</label>
+            <span className="text-sm font-medium text-gray-700">{lineCost2.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
+          </div>
+        </div>
+
+        {/* Resultat-linje */}
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-200">
+          <span className="text-sm font-medium text-gray-700 w-24">Resultat:</span>
+
+          <div className="flex items-center gap-2">
             <label className="text-xs text-gray-500">DG %</label>
             <input
               type="number"
@@ -151,15 +204,15 @@ export default function Layout() {
             />
           </div>
 
-          <div className="h-8 w-px bg-gray-300 hidden sm:block"></div>
+          <div className="h-6 w-px bg-gray-300 hidden sm:block"></div>
 
           <div className="flex items-center gap-4 text-sm">
             <div>
-              <span className="text-gray-500">Kost: </span>
+              <span className="text-gray-500">Total kost: </span>
               <span className="font-medium">{totalCost.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
             </div>
             <div>
-              <span className="text-gray-500">Salg: </span>
+              <span className="text-gray-500">Salgspris: </span>
               <span className="font-bold text-green-600">{salesPrice.toLocaleString('nb-NO', { minimumFractionDigits: 2 })} kr</span>
             </div>
             <div>
